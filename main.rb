@@ -2,34 +2,58 @@
 
 require_relative 'lib/code_writer'
 require_relative 'lib/parser'
+require_relative 'lib/command'
+require_relative 'lib/command_generator'
 
 class Main
+  class Source
+    attr_reader :vm_files, :asm_filename
+
+    def initialize(vm_files, asm_filename)
+      @vm_files = vm_files
+      @asm_filename = asm_filename
+    end
+  end
+
   class << self
     def run
-      file_name = ARGV[0]
-      validate_file_name(file_name)
-      process_file(file_name)
+      path = ARGV[0]
+      validate_path(path)
+
+      File.directory?("files/#{path}") ? process_directory("files/#{path}") : process_file("files/#{path}")
     end
 
     private
 
-    def validate_file_name(file_name)
-      return if file_name
+    def validate_path(path)
+      return if path
 
-      puts 'Error: Please provide a file name.'
+      puts 'Error: Please provide a path.'
       exit(1)
     end
 
-    def process_file(file_name)
-      input_path = "files/#{file_name}"
-      output_path = "files/#{file_name.gsub('.vm', '.asm')}"
+    def process_directory(path)
+      vm_files = select_vm_files(path)
+      asm_file_name = "#{path}/#{path.split('/').last}.asm"
 
-      File.open(input_path, 'r') do |file|
-        File.open(output_path, 'w') do |output_file|
-          code_writer = CodeWriter.new(output_file)
-          Parser.new(file, code_writer).run
-        end
-      end
+      translate_source_code(Source.new(vm_files, asm_file_name))
+    end
+
+    def translate_source_code(source)
+      output_file = File.open(source.asm_filename, 'w')
+      code_writer = CodeWriter.new(output_file)
+      source.vm_files.each { |file| Parser.new(File.open(file), code_writer).run }
+    end
+
+    def process_file(path)
+      vm_files = [path]
+      asm_file_name = path.gsub('.vm', '.asm')
+
+      translate_source_code(Source.new(vm_files, asm_file_name))
+    end
+
+    def select_vm_files(path)
+      Dir.entries(path).select { |file| file.end_with?('.vm') }.map { |file| "#{path}/#{file}" }
     end
   end
 end

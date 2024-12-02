@@ -1,23 +1,13 @@
 # frozen_string_literal: true
 
 class Parser
-  class Command
-    attr_reader :vm_command, :command, :type, :arg1, :arg2
-
-    def initialize(vm_command, command, type, arg1, arg2)
-      @vm_command = vm_command
-      @command = command
-      @arg1 = arg1
-      @arg2 = arg2
-      @type = type
-    end
-  end
-
   COMMAND_TYPES = {
     'add' => 'C_ARITHMETIC', 'sub' => 'C_ARITHMETIC', 'neg' => 'C_ARITHMETIC',
     'eq' => 'C_ARITHMETIC', 'gt' => 'C_ARITHMETIC', 'lt' => 'C_ARITHMETIC',
     'and' => 'C_ARITHMETIC', 'or' => 'C_ARITHMETIC', 'not' => 'C_ARITHMETIC',
-    'push' => 'C_PUSH', 'pop' => 'C_POP'
+    'push' => 'C_PUSH', 'pop' => 'C_POP', 'label' => 'C_LABEL',
+    'goto' => 'C_GOTO', 'if-goto' => 'C_IF', 'function' => 'C_FUNCTION',
+    'return' => 'C_RETURN', 'call' => 'C_CALL'
   }.freeze
 
   def initialize(input_file, code_writer)
