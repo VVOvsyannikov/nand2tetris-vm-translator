@@ -1,8 +1,23 @@
 # frozen_string_literal: true
 
 class CommandGenerator
-  def initialize
+  def initialize(filename)
+    @filename = filename
     @current_row = 0
+    @function_calls_counter = Hash.new(0)
+    @current_function = nil
+  end
+
+  def generate_init
+    <<~ASM
+      #{set_pointer('SP', 256).chomp}
+      #{set_pointer('LCL', 300).chomp}
+      #{set_pointer('ARG', 400).chomp}
+      #{set_pointer('THIS', 3000).chomp}
+      #{set_pointer('THAT', 3010).chomp}
+      // call Sys.init
+      #{generate_call(Command.new('call Sys.init', 'call', 'C_CALL', 'Sys.init', '0')).chomp}
+    ASM
   end
 
   def generate_arithmetic(command)
@@ -28,7 +43,145 @@ class CommandGenerator
     send(method_name, command.arg2)
   end
 
+  def generate_label(command)
+    <<~ASM
+      (#{@filename}.#{@current_function}$#{command.arg1})
+    ASM
+  end
+
+  def generate_goto(command)
+    increment_row(2)
+    <<~ASM
+      @#{@filename}.#{@current_function}$#{command.arg1}
+      0;JMP
+    ASM
+  end
+
+  def generate_if(command)
+    increment_row(6)
+    <<~ASM
+      @SP
+      M=M-1
+      A=M
+      D=M+1
+      @#{@filename}.#{@current_function}$#{command.arg1}
+      D;JEQ
+    ASM
+  end
+
+  def generate_function(command)
+    set_current_function(command.arg1)
+    result = generate_function_label(command)
+    command.arg2.to_i.times { result += push_constant(0) }
+    result
+  end
+
+  def generate_function_label(command)
+    <<~ASM
+      (#{@filename}.#{command.arg1})
+    ASM
+  end
+
+  def generate_call(command)
+    increment_row(19)
+    i = @function_calls_counter[command.arg1] += 1
+    <<~ASM
+      // push return-address
+      @#{@filename}.#{command.arg1}$ret.#{i}
+      D=A
+      @SP
+      A=M
+      M=D
+      @SP
+      M=M+1
+      #{%w[LCL ARG THIS THAT].map { |segment| save_segment(segment) }.join.chomp}
+      // ARG = SP - n - 5
+      @SP
+      D=M
+      @#{command.arg2.to_i + 5}
+      D=D-A
+      @ARG
+      M=D
+      // LCL = SP
+      @SP
+      D=M
+      @LCL
+      M=D
+      // goto function
+      @#{@filename}.#{command.arg1}
+      0;JMP
+      // (return-address)
+      (#{@filename}.#{command.arg1}$ret.#{i})
+    ASM
+  end
+
+  def generate_return(_command)
+    increment_row(23)
+    <<~ASM
+      // endFRAME = LCL
+      @LCL
+      D=M
+      @R13
+      M=D
+      // RETaddr = *(endFRAME - 5)
+      @5
+      A=D-A
+      D=M
+      @R14
+      M=D
+      // *ARG = pop()
+      @SP
+      M=M-1
+      A=M
+      D=M
+      @ARG
+      A=M
+      M=D
+      // SP = ARG + 1
+      @ARG
+      D=M+1
+      @SP
+      M=D
+      #{%w[THAT THIS ARG LCL].map { |segment| restore_segment(segment) }.join.chomp}
+      // goto RETaddr
+      @R14
+      A=M
+      0;JMP
+    ASM
+  end
+
   private
+
+  def set_current_function(function_name)
+    @current_function = function_name
+  end
+
+  def save_segment(segment)
+    increment_row(7)
+    <<~ASM
+      // push #{segment}
+      @#{segment}
+      D=M
+      @SP
+      A=M
+      M=D
+      @SP
+      M=M+1
+    ASM
+  end
+
+  def restore_segment(segment)
+    increment_row(6)
+    <<~ASM
+      // #{segment} = *(endFRAME - 1)
+      @R13
+      M=M-1
+      A=M
+      D=M
+      @#{segment}
+      M=D
+    ASM
+  end
 
   def increment_row(lines)
     @current_row += lines
@@ -271,7 +424,7 @@ class CommandGenerator
   def push_static(value)
     increment_row(7)
     <<~ASM
-      @#{filename}.#{value}
+      @#{@filename}.#{value}
       D=M
       @SP
       A=M
@@ -288,7 +441,7 @@ class CommandGenerator
       M=M-1
       A=M
       D=M
-      @#{filename}.#{value}
+      @#{@filename}.#{value}
       M=D
     ASM
   end
@@ -311,7 +464,7 @@ class CommandGenerator
   end
 
   def generate_pop_segment(segment, value)
-    increment_row(14)
+    increment_row(13)
     <<~ASM
       @#{value}
       D=A
@@ -325,6 +478,17 @@ class CommandGenerator
       D=M
       @R13
       A=M
+      M=D
+    ASM
+  end
+
+  def set_pointer(segment, value)
+    increment_row(4)
+    <<~ASM
+      // set @#{segment}
+      @#{value}
+      D=A
+      @#{segment}
       M=D
     ASM
   end
