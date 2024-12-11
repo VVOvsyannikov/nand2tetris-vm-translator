@@ -9,35 +9,14 @@ class CommandGenerator
   end
 
   def generate_init
-    increment_row(20)
     <<~ASM
-      // set @SP
-      @256
-      D=A
-      @SP
-      M=D
-      // set @LCL
-      @300
-      D=A
-      @LCL
-      M=D
-      // set @ARG
-      @400
-      D=A
-      @ARG
-      M=D
-      // set @THIS
-      @3000
-      D=A
-      @THIS
-      M=D
-      // set @THAT
-      @3010
-      D=A
-      @THAT
-      M=D
+      #{set_pointer('SP', 256).chomp}
+      #{set_pointer('LCL', 300).chomp}
+      #{set_pointer('ARG', 400).chomp}
+      #{set_pointer('THIS', 3000).chomp}
+      #{set_pointer('THAT', 3010).chomp}
       // call Sys.init
-      #{generate_call(Command.new('call Sys.init', 'call', 'C_CALL', 'Sys.init', '0'))}
+      #{generate_call(Command.new('call Sys.init', 'call', 'C_CALL', 'Sys.init', '0')).chomp}
     ASM
   end
 
@@ -104,7 +83,7 @@ class CommandGenerator
   end
 
   def generate_call(command)
-    increment_row(47)
+    increment_row(19)
     i = @function_calls_counter[command.arg1] += 1
     <<~ASM
       // push return-address
@@ -115,38 +94,7 @@ class CommandGenerator
       M=D
       @SP
       M=M+1
-      // push LCL
-      @LCL
-      D=M
-      @SP
-      A=M
-      M=D
-      @SP
-      M=M+1
-      // push ARG
-      @ARG
-      D=M
-      @SP
-      A=M
-      M=D
-      @SP
-      M=M+1
-      // push THIS
-      @THIS
-      D=M
-      @SP
-      A=M
-      M=D
-      @SP
-      M=M+1
-      // push THAT
-      @THAT
-      D=M
-      @SP
-      A=M
-      M=D
-      @SP
-      M=M+1
+      #{%w[LCL ARG THIS THAT].map { |segment| save_segment(segment) }.join.chomp}
       // ARG = SP - n - 5
       @SP
       D=M
@@ -168,7 +116,7 @@ class CommandGenerator
   end
 
   def generate_return(_command)
-    increment_row(47)
+    increment_row(23)
     <<~ASM
       // endFRAME = LCL
       @LCL
@@ -194,34 +142,7 @@ class CommandGenerator
       D=M+1
       @SP
       M=D
-      // THAT = *(endFRAME - 1)
-      @R13
-      M=M-1
-      A=M
-      D=M
-      @THAT
-      M=D
-      // THIS = *(endFRAME - 2)
-      @R13
-      M=M-1
-      A=M
-      D=M
-      @THIS
-      M=D
-      // ARG = *(endFRAME - 3)
-      @R13
-      M=M-1
-      A=M
-      D=M
-      @ARG
-      M=D
-      // LCL = *(endFRAME - 4)
-      @R13
-      M=M-1
-      A=M
-      D=M
-      @LCL
-      M=D
+      #{%w[THAT THIS ARG LCL].map { |segment| restore_segment(segment) }.join.chomp}
       // goto RETaddr
       @R14
       A=M
@@ -233,6 +154,33 @@ class CommandGenerator
 
   def set_current_function(function_name)
     @current_function = function_name
+  end
+
+  def save_segment(segment)
+    increment_row(7)
+    <<~ASM
+      // push #{segment}
+      @#{segment}
+      D=M
+      @SP
+      A=M
+      M=D
+      @SP
+      M=M+1
+    ASM
+  end
+
+  def restore_segment(segment)
+    increment_row(6)
+    <<~ASM
+      // #{segment} = *(endFRAME - 1)
+      @R13
+      M=M-1
+      A=M
+      D=M
+      @#{segment}
+      M=D
+    ASM
   end
 
   def increment_row(lines)
@@ -530,6 +478,17 @@ class CommandGenerator
       D=M
       @R13
       A=M
+      M=D
+    ASM
+  end
+
+  def set_pointer(segment, value)
+    increment_row(4)
+    <<~ASM
+      // set @#{segment}
+      @#{value}
+      D=A
+      @#{segment}
       M=D
     ASM
   end
